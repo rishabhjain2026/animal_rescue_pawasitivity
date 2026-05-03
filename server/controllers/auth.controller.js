@@ -43,6 +43,42 @@ const login = async (req, res) => {
   }
 };
 
+// POST /api/auth/admin-login
+const adminLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@pawrescue.in';
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@123';
+
+    if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
+      return res.status(401).json({
+        message: 'Invalid admin credentials',
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        role: 'admin',
+        email,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    res.json({
+      token,
+      role: 'admin',
+      email,
+      name: 'Admin',
+    });
+  } catch (err) {
+    res.status(500).json({
+      message: err.message,
+    });
+  }
+};
+
 // GET /api/auth/me
 const getMe = async (req, res) => {
   try {
@@ -161,4 +197,12 @@ const verifyOtp = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, sendOtp, verifyOtp };
+// module.exports = { register, login, getMe, sendOtp, verifyOtp };
+module.exports = {
+  register,
+  login,
+  adminLogin,
+  getMe,
+  sendOtp,
+  verifyOtp
+};

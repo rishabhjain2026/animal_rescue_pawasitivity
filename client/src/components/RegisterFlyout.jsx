@@ -3,17 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const options = [
-  {
-    key:         'domestic',
-    path:        '/report/domestic',
-    requiresAuth: true,   // needs login — has pets, appointments, health records
-    icon:        '🏠',
-    title:       'Domestic animal',
-    desc:        'My pet needs a vet — book an appointment, track health records.',
-    color:       'var(--green)',
-    bg:          'var(--green-light)',
-    authNote:    'You\'ll need to log in so we can link the case to your pet\'s records.',
-  },
+  // {
+  //   key:         'domestic',
+  //   path:        '/report/domestic',
+  //   requiresAuth: true,   // needs login — has pets, appointments, health records
+  //   icon:        '🏠',
+  //   title:       'Domestic animal',
+  //   desc:        'My pet needs a vet — book an appointment, track health records.',
+  //   color:       'var(--green)',
+  //   bg:          'var(--green-light)',
+  //   authNote:    'You\'ll need to log in so we can link the case to your pet\'s records.',
+  // },
   {
     key:         'street',
     path:        '/report/street',
