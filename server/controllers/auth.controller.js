@@ -1,11 +1,43 @@
 const jwt      = require('jsonwebtoken');
 const crypto   = require('crypto');
 const User     = require('../models/User');
-const otpStore = require('../utils/otpStore');
-const nodemailer = require('nodemailer');
+const twilio = require('twilio');
 
 const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+
+const formatPhoneE164 = (phone) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length >= 11 && digits.length <= 15) return `+${digits}`;
+  return null;
+};
+
+const getTwilioVerifyClient = () => {
+  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID } = process.env;
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_VERIFY_SERVICE_SID) return null;
+  return {
+    client: twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
+    serviceSid: TWILIO_VERIFY_SERVICE_SID,
+  };
+};
+
+const findOrCreatePhoneGuest = async (phoneE164) => {
+  let user = await User.findOne({ phone: phoneE164 });
+  if (!user) {
+    user = await User.create({
+      name: `Reporter (${phoneE164.slice(-4)})`,
+      email: `phone_${phoneE164.replace(/\D/g, '')}@pawrescue.local`,
+      phone: phoneE164,
+      password: crypto.randomBytes(16).toString('hex'),
+      role: 'user',
+      isVerified: true,
+    });
+  }
+  return user;
+};
 
 // POST /api/auth/register
 const register = async (req, res) => {
@@ -91,52 +123,30 @@ const getMe = async (req, res) => {
 
 // ── OTP Auth for street form (phone-only, no registration needed) ─────────────
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-});
-
 // POST /api/auth/send-otp
-// Sends a 6-digit OTP to the phone number via email (or SMS if Twilio configured).
-// Also auto-creates a guest user account for the phone if one doesn't exist,
-// so the street case has a reporter reference in the DB.
+// Sends OTP using Twilio Verify.
 const sendOtp = async (req, res) => {
   try {
     const { phone } = req.body;
-    if (!phone || phone.length < 10) {
-      return res.status(400).json({ message: 'Valid phone number required' });
+    const phoneE164 = formatPhoneE164(phone);
+    if (!phoneE164) {
+      return res.status(400).json({ message: 'Valid phone number required (use 10-digit India number or E.164).' });
     }
 
-    // Throttle: block if an OTP was sent in the last 60 seconds
-    const existing = otpStore.get(phone);
-    if (existing && existing.expiresAt - Date.now() > 4 * 60 * 1000) {
-      return res.status(429).json({ message: 'OTP already sent. Please wait 60 seconds before requesting again.' });
+    const verify = getTwilioVerifyClient();
+    if (!verify) {
+      return res.status(500).json({ message: 'Twilio Verify is not configured on the server.' });
     }
 
-    const otp = crypto.randomInt(100000, 999999).toString();
-    otpStore.set(phone, otp);
+    await verify.client.verify.v2.services(verify.serviceSid)
+      .verifications
+      .create({ to: phoneE164, channel: 'sms' });
 
-    // ── Send via email (dev fallback — swap for SMS in production) ──
-    // In production: use Twilio/Fast2SMS/MSG91 to send a real SMS.
-    // For now we log it so you can test without an SMS provider.
-    console.log(`[OTP] Phone: ${phone} → OTP: ${otp}`);
-
-    if (process.env.EMAIL_USER) {
-      // Optional: email the OTP if EMAIL_USER is set (useful for testing)
-      await transporter.sendMail({
-        from:    `"PawRescue" <${process.env.EMAIL_USER}>`,
-        to:      process.env.OTP_TEST_EMAIL || process.env.EMAIL_USER,
-        subject: `PawRescue OTP: ${otp}`,
-        text:    `Your PawRescue verification code is: ${otp}\n\nValid for 5 minutes. Do not share this code.`,
-      }).catch(() => {});
-    }
-
-    // Plug in SMS here when ready:
-    // await twilioClient.messages.create({ body: `Your PawRescue OTP: ${otp}`, from: process.env.TWILIO_PHONE, to: phone });
-
-    res.json({ message: 'OTP sent successfully', phone });
+    res.json({ message: 'OTP sent successfully', phone: phoneE164 });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    const status = err?.status || 500;
+    const message = err?.message || 'Failed to send OTP';
+    res.status(status).json({ message });
   }
 };
 
@@ -146,42 +156,23 @@ const verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
     if (!phone || !otp) return res.status(400).json({ message: 'Phone and OTP required' });
+    const phoneE164 = formatPhoneE164(phone);
+    if (!phoneE164) return res.status(400).json({ message: 'Invalid phone number format.' });
 
-    const record = otpStore.get(phone);
-
-    if (!record) {
-      return res.status(400).json({ message: 'No OTP found for this number. Please request a new one.' });
-    }
-    if (Date.now() > record.expiresAt) {
-      otpStore.clear(phone);
-      return res.status(400).json({ message: 'OTP has expired. Please request a new one.' });
-    }
-    if (record.attempts >= 3) {
-      otpStore.clear(phone);
-      return res.status(400).json({ message: 'Too many incorrect attempts. Please request a new OTP.' });
-    }
-    if (record.otp !== otp.toString()) {
-      otpStore.increment(phone);
-      const left = 3 - (record.attempts + 1);
-      return res.status(400).json({ message: `Incorrect OTP. ${left} attempt${left !== 1 ? 's' : ''} remaining.` });
+    const verify = getTwilioVerifyClient();
+    if (!verify) {
+      return res.status(500).json({ message: 'Twilio Verify is not configured on the server.' });
     }
 
-    // OTP correct — clear it
-    otpStore.clear(phone);
+    const check = await verify.client.verify.v2.services(verify.serviceSid)
+      .verificationChecks
+      .create({ to: phoneE164, code: String(otp) });
 
-    // Find or create a phone-only guest user
-    let user = await User.findOne({ phone });
-    if (!user) {
-      // Create a minimal user — no email, no password needed for street reporters
-      user = await User.create({
-        name:     `Reporter (${phone.slice(-4)})`,
-        email:    `phone_${phone.replace(/\D/g,'')}@pawrescue.local`,
-        phone,
-        password: crypto.randomBytes(16).toString('hex'), // random, never used
-        role:     'user',
-        isVerified: true,
-      });
+    if (check.status !== 'approved') {
+      return res.status(400).json({ message: 'Incorrect or expired OTP. Please try again.' });
     }
+
+    const user = await findOrCreatePhoneGuest(phoneE164);
 
     res.json({
       message:   'Phone verified successfully',
@@ -193,7 +184,9 @@ const verifyOtp = async (req, res) => {
       isGuest:   true,
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    const status = err?.status || 500;
+    const message = err?.message || 'OTP verification failed';
+    res.status(status).json({ message });
   }
 };
 

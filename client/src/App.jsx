@@ -100,14 +100,13 @@ import {
 } from 'react-router-dom';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { AdminProvider } from './context/AdminContext';
+import { AdminProvider, useAdmin } from './context/AdminContext';
 import { ToastProvider } from './context/ToastContext';
 
 import Navbar from './components/Navbar';
 
 import Home from './pages/Home';
 import Login, { Register } from './pages/Login';
-import DomesticForm from './pages/DomesticForm';
 import StreetForm from './pages/StreetForm';
 import CaseTracker from './pages/CaseTracker';
 import VetRegister from './pages/VetRegister';
@@ -162,6 +161,16 @@ const RoleGuard = ({ children, roles }) => {
   return children;
 };
 
+const AdminProtected = ({ children }) => {
+  const { admin } = useAdmin();
+
+  if (!admin) {
+    return <Navigate to="/admin/login" replace />;
+  }
+
+  return children;
+};
+
 const AppRoutes = () => {
   const location = useLocation();
 
@@ -193,15 +202,6 @@ const AppRoutes = () => {
         <Route path="/report/street" element={<StreetForm />} />
 
         {/* Protected user routes */}
-        <Route
-          path="/report/domestic"
-          element={
-            <Protected>
-              <DomesticForm />
-            </Protected>
-          }
-        />
-
         <Route
           path="/track/:caseId"
           element={
@@ -257,11 +257,9 @@ const AppRoutes = () => {
         <Route
           path="/admin/dashboard"
           element={
-            <Protected>
-              <RoleGuard roles={['admin']}>
-                <AdminDashboard />
-              </RoleGuard>
-            </Protected>
+            <AdminProtected>
+              <AdminDashboard />
+            </AdminProtected>
           }
         />
 

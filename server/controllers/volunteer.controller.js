@@ -62,21 +62,52 @@ const respondToStreetCase = async (req, res) => {
     if (!streetCase) return res.status(404).json({ message: 'Case not found' });
 
     const volunteer = await Volunteer.findOne({ user: req.user._id });
-    const entry = streetCase.dispatchChain.find(
-      (d) => d.responder?.toString() === volunteer._id.toString() && d.response === 'pending'
-    );
-    if (!entry) return res.status(400).json({ message: 'No pending dispatch for you' });
-
-    entry.respondedAt = new Date();
-    entry.response = response;
-    if (rejectionReason) entry.rejectionReason = rejectionReason;
+    if (!volunteer) return res.status(404).json({ message: 'Profile not found' });
 
     if (response === 'accepted') {
+      if (streetCase.assignedVolunteer && streetCase.assignedVolunteer.toString() !== volunteer._id.toString()) {
+        return res.status(409).json({ message: 'This case is already accepted by another volunteer' });
+      }
+
+      let entry = streetCase.dispatchChain.find(
+        (d) => d.responderType === 'volunteer' && d.responder?.toString() === volunteer._id.toString()
+      );
+      if (!entry) {
+        streetCase.dispatchChain.push({
+          responderType: 'volunteer',
+          responder: volunteer._id,
+          sentAt: new Date(),
+          response: 'accepted',
+          respondedAt: new Date(),
+        });
+      } else {
+        entry.respondedAt = new Date();
+        entry.response = 'accepted';
+      }
+
       streetCase.assignedVolunteer = volunteer._id;
       streetCase.status = 'volunteer-enroute';
       volunteer.availabilityStatus = 'busy';
       await volunteer.save();
       streetCase.statusTimeline.push({ status: 'volunteer-enroute', note: 'Volunteer accepted and is on the way', updatedBy: req.user._id });
+    } else {
+      let entry = streetCase.dispatchChain.find(
+        (d) => d.responderType === 'volunteer' && d.responder?.toString() === volunteer._id.toString()
+      );
+      if (!entry) {
+        streetCase.dispatchChain.push({
+          responderType: 'volunteer',
+          responder: volunteer._id,
+          sentAt: new Date(),
+          response: 'rejected',
+          respondedAt: new Date(),
+          rejectionReason: rejectionReason || '',
+        });
+      } else {
+        entry.respondedAt = new Date();
+        entry.response = 'rejected';
+        if (rejectionReason) entry.rejectionReason = rejectionReason;
+      }
     }
 
     await streetCase.save();
@@ -94,10 +125,14 @@ const getVolunteerDashboard = async (req, res) => {
     const volunteer = await Volunteer.findOne({ user: req.user._id });
     if (!volunteer) return res.status(404).json({ message: 'Profile not found' });
 
+    const pending = await StreetCase.find({
+      status: { $nin: ['completed', 'cancelled'] },
+      assignedVolunteer: null,
+    }).sort({ createdAt: -1 });
     const active   = await StreetCase.find({ assignedVolunteer: volunteer._id, status: { $nin: ['completed','cancelled'] } });
     const completed = await StreetCase.find({ assignedVolunteer: volunteer._id, status: 'completed' }).limit(20);
 
-    res.json({ volunteer, active, completed, totalRescues: volunteer.totalRescues });
+    res.json({ volunteer, pending, active, completed, totalRescues: volunteer.totalRescues });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

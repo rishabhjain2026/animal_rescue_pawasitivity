@@ -251,8 +251,11 @@ export default function StreetForm() {
     setLoading(true);
     try {
       const fd = new FormData();
-      Object.entries(form).forEach(([k,v]) => fd.append(k, v));
-      fd.append('reporterPhone', phone || form.reporterPhone);
+      const finalPhone = phone || form.reporterPhone;
+      Object.entries(form)
+        .filter(([k]) => k !== 'reporterPhone')
+        .forEach(([k, v]) => fd.append(k, v));
+      fd.append('reporterPhone', finalPhone);
       fd.append('lat', coords.lat);
       fd.append('lng', coords.lng);
       images.forEach(img => fd.append('images', img));
@@ -329,6 +332,7 @@ export default function StreetForm() {
               </select>
             </div>
 
+            {/* Severity temporarily hidden as requested.
             <div className="form-group">
               <label className="form-label">
                 Severity — how serious does it look?
@@ -342,6 +346,7 @@ export default function StreetForm() {
                 <span>Very mild</span><span>Critical</span>
               </div>
             </div>
+            */}
 
             <div className="form-group">
               <label className="form-label">Landmark / spot description</label>
@@ -437,7 +442,6 @@ export default function StreetForm() {
               <p style={{ fontWeight:600, marginBottom:16 }}>Summary</p>
               {[
                 ['Injury type',  INJURY_TYPES.find(t => t.value === form.injuryType)?.label],
-                ['Severity',     `${form.humanSeverity}/5 — ${severityLabels[form.humanSeverity]}`],
                 ['Phone',        form.reporterPhone],
                 ['Landmark',     form.landmark || '—'],
                 ['Photos',       images.length > 0 ? `${images.length} uploaded` : 'None'],

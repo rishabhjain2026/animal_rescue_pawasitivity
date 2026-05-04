@@ -29,6 +29,7 @@ app.use('/api/domestic', require('./routes/domestic.routes'));
 app.use('/api/street', require('./routes/street.routes'));
 app.use('/api/appointments', require('./routes/appointment.routes'));
 app.use('/api/pets', require('./routes/pet.routes'));
+app.use('/api/admin', require('./routes/admin.routes'));
 
 // Socket.io — join case rooms for live tracking
 io.on('connection', (socket) => {

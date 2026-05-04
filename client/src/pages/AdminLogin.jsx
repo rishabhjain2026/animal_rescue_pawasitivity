@@ -1,11 +1,11 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAdmin } from '../context/AdminContext';
 import { useToast } from '../context/ToastContext';
 
 export default function AdminLogin() {
-  const { login, user, loading } = useAuth();
+  const { login, admin, loading } = useAdmin();
   const navigate = useNavigate();
   const toast    = useToast();
 
@@ -15,24 +15,19 @@ export default function AdminLogin() {
 
   // Already logged in as admin → redirect immediately
   useEffect(() => {
-    if (!loading && user?.role === 'admin') {
+    if (!loading && admin?.role === 'admin') {
       navigate('/admin/dashboard', { replace: true });
     }
-  }, [user, loading, navigate]);
+  }, [admin, loading, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      // AuthContext.login() handles the admin check internally.
-      // If email+password match ADMIN_EMAIL/ADMIN_PASSWORD it sets role:'admin'
-      // without any backend call. If credentials are wrong it throws.
       const loggedIn = await login(form.email, form.password);
 
       if (loggedIn.role !== 'admin') {
-        // Someone tried to use their normal user credentials here
         toast.error('These are not admin credentials. Please use the regular login.');
-        logout();
         return;
       }
 

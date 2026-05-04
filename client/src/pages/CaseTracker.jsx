@@ -8,6 +8,17 @@ import useSocket from '../hooks/useSocket';
 
 const SEVERITY_LABEL = { 1:'Very mild', 2:'Mild', 3:'Moderate', 4:'Serious', 5:'Critical' };
 const SEVERITY_COLOR = { 1:'var(--green)', 2:'var(--green)', 3:'var(--amber)', 4:'var(--coral)', 5:'#c0392b' };
+const TRACKER_STATUS_LABEL = {
+  reported: 'REPORTED',
+  accepted: 'ACCEPTED',
+  completed: 'COMPLETED',
+};
+
+const normalizeTrackerStatus = (status) => {
+  if (status === 'reported') return 'reported';
+  if (status === 'completed') return 'completed';
+  return 'accepted';
+};
 
 export default function CaseTracker() {
   const { caseId }    = useParams();
@@ -49,6 +60,7 @@ export default function CaseTracker() {
   const [lng, lat] = caseData.location?.coordinates || [0, 0];
   const severity   = caseData.severityScore;
   const guide      = routeState.firstAidGuide;
+  const trackerStatus = normalizeTrackerStatus(caseData.status);
 
   return (
     <div style={{ minHeight:'calc(100vh - var(--nav-h))', background:'var(--bg)', padding:'40px 24px' }}>
@@ -65,11 +77,11 @@ export default function CaseTracker() {
           </div>
           <div style={{ textAlign:'right' }}>
             <div style={{ display:'inline-block', padding:'6px 14px', borderRadius:20,
-              background: caseData.status === 'completed' ? 'var(--green-light)' : caseData.status === 'cancelled' ? '#FCEBEB' : '#FAEEDA',
+              background: trackerStatus === 'completed' ? 'var(--green-light)' : trackerStatus === 'reported' ? '#E6F1FB' : '#FAEEDA',
               marginBottom:8 }}>
               <span style={{ fontSize:13, fontWeight:600,
-                color: caseData.status === 'completed' ? 'var(--green-mid)' : caseData.status === 'cancelled' ? 'var(--coral)' : '#854F0B' }}>
-                {caseData.status?.replace(/-/g,' ').toUpperCase()}
+                color: trackerStatus === 'completed' ? 'var(--green-mid)' : trackerStatus === 'reported' ? '#185FA5' : '#854F0B' }}>
+                {TRACKER_STATUS_LABEL[trackerStatus]}
               </span>
             </div>
             <p style={{ fontSize:12, color:'var(--text-hint)' }}>
@@ -99,7 +111,7 @@ export default function CaseTracker() {
         {/* Live status bar */}
         <div className="card" style={{ marginBottom:24 }}>
           <p style={{ fontWeight:600, marginBottom:16 }}>Rescue progress</p>
-          <StatusBar status={caseData.status} timeline={caseData.statusTimeline} />
+          <StatusBar status={trackerStatus} timeline={caseData.statusTimeline} />
         </div>
 
         {/* Assigned responders */}

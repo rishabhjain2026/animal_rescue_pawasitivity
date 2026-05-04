@@ -1,6 +1,6 @@
 // ── VolunteerDashboard ────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react';
-import { getVolunteerDashboard, volunteerRespondCase, updateVolunteerStatus } from '../api/cases.api';
+import { getVolunteerDashboard, volunteerRespondCase, updateVolunteerStatus, updateCaseStatus } from '../api/cases.api';
 import { useToast } from '../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -13,7 +13,8 @@ export function VolunteerDashboard() {
   const [data,       setData]       = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [responding, setResponding] = useState({});
-  const [activeTab,  setActiveTab]  = useState('active');
+  const [completing, setCompleting] = useState({});
+  const [activeTab,  setActiveTab]  = useState('pending');
 
   const fetch = () => {
     getVolunteerDashboard()
@@ -44,6 +45,22 @@ export function VolunteerDashboard() {
       toast.success(`Status set to ${next}`);
       fetch();
     } catch { toast.error('Failed to update status'); }
+  };
+
+  const markCompleted = async (caseId) => {
+    setCompleting((p) => ({ ...p, [caseId]: true }));
+    try {
+      await updateCaseStatus(caseId, {
+        status: 'completed',
+        note: 'Marked completed by volunteer from dashboard',
+      });
+      toast.success('Rescue marked as completed');
+      fetch();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to mark completed');
+    } finally {
+      setCompleting((p) => ({ ...p, [caseId]: false }));
+    }
   };
 
   if (loading) return <div style={{ display:'flex', justifyContent:'center', padding:80 }}><span className="spinner" style={{ width:32, height:32 }} /></div>;
@@ -87,16 +104,64 @@ export function VolunteerDashboard() {
 
         {/* Tabs */}
         <div style={{ display:'flex', gap:4, borderBottom:'2px solid var(--border)', marginBottom:24 }}>
-          {[{key:'active',label:'Active cases'},{key:'completed',label:'Completed'}].map(tab => (
+          {[
+            { key:'pending', label:'Pending dispatch', count: data?.pending?.length || 0 },
+            { key:'active', label:'Active cases', count: data?.active?.length || 0 },
+            { key:'completed', label:'Completed', count: data?.completed?.length || 0 },
+          ].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
               padding:'10px 16px', fontSize:14, fontWeight: activeTab === tab.key ? 600 : 400,
               color: activeTab === tab.key ? 'var(--green)' : 'var(--text-muted)',
               background:'transparent', border:'none', cursor:'pointer',
               borderBottom: activeTab === tab.key ? '2px solid var(--green)' : '2px solid transparent',
               marginBottom:-2,
-            }}>{tab.label}</button>
+            }}>
+              {tab.label}
+              {tab.count > 0 && (
+                <span style={{
+                  marginLeft: 8,
+                  padding:'1px 8px',
+                  borderRadius:20,
+                  fontSize:11,
+                  fontWeight:600,
+                  background: tab.key === 'pending' ? 'var(--coral-light)' : 'var(--green-light)',
+                  color: tab.key === 'pending' ? 'var(--coral)' : 'var(--green-mid)',
+                }}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
           ))}
         </div>
+
+        {activeTab === 'pending' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            {data?.pending?.length === 0
+              ? <div style={{ textAlign:'center', padding:60, color:'var(--text-muted)' }}><p style={{ fontSize:36, marginBottom:12 }}>📡</p><p>No pending dispatch requests</p></div>
+              : data.pending.map((c) => (
+                <div key={c._id} className="card" style={{ border:'1.5px solid var(--coral)', position:'relative' }}>
+                  <div style={{ position:'absolute', top:12, right:12 }}>
+                    <span style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, background:'var(--coral-light)', color:'var(--coral)' }}>
+                      Awaiting response
+                    </span>
+                  </div>
+                  <p style={{ fontWeight:600, fontSize:15, marginBottom:6, textTransform:'capitalize' }}>{c.injuryType?.replace(/-/g,' ')}</p>
+                  <p style={{ fontSize:13, color:'var(--text-muted)', marginBottom:12 }}>{c.landmark || 'See GPS'} · Reporter: {c.reporterPhone}</p>
+                  {c.description && <p style={{ fontSize:13, marginBottom:14, lineHeight:1.6 }}>{c.description}</p>}
+                  <div style={{ display:'flex', gap:12 }}>
+                    <button className="btn btn-primary" style={{ flex:2 }} onClick={() => respond(c._id, 'accepted')} disabled={responding[c._id]}>
+                      {responding[c._id] ? <span className="spinner" /> : 'Accept rescue'}
+                    </button>
+                    <button className="btn btn-outline" style={{ flex:1, color:'var(--coral)', borderColor:'var(--coral)' }}
+                      onClick={() => respond(c._id, 'rejected')} disabled={responding[c._id]}>
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        )}
 
         {activeTab === 'active' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
@@ -115,6 +180,13 @@ export function VolunteerDashboard() {
                   <div style={{ display:'flex', gap:10 }}>
                     <button className="btn btn-primary btn-sm" onClick={() => navigate(`/track/${c._id}`)}>Live tracker</button>
                     {c.reporterPhone && <a href={`tel:${c.reporterPhone}`} className="btn btn-outline btn-sm">Call reporter</a>}
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => markCompleted(c._id)}
+                      disabled={completing[c._id]}
+                    >
+                      {completing[c._id] ? <span className="spinner" /> : 'Mark completed'}
+                    </button>
                   </div>
                 </div>
               ))

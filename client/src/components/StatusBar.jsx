@@ -1,15 +1,22 @@
 const STEPS = [
   { key: 'reported',           label: 'Reported',        icon: '📍' },
-  { key: 'dispatched',         label: 'Dispatching',     icon: '📡' },
-  { key: 'volunteer-enroute',  label: 'Volunteer going', icon: '🚶' },
-  { key: 'vet-dispatched',     label: 'Vet alerted',     icon: '🩺' },
-  { key: 'rescue-in-progress', label: 'Rescue active',   icon: '🐾' },
-  { key: 'rescued',            label: 'Rescued',         icon: '✅' },
+  { key: 'accepted',           label: 'Accepted',        icon: '🤝' },
   { key: 'completed',          label: 'Completed',       icon: '📄' },
 ];
 
+const normalizeStatus = (status) => {
+  if (status === 'reported') return 'reported';
+  if (status === 'completed') return 'completed';
+  return 'accepted';
+};
+
 export default function StatusBar({ status, timeline = [] }) {
-  const currentIdx = STEPS.findIndex((s) => s.key === status);
+  const normalizedCurrent = normalizeStatus(status);
+  const currentIdx = STEPS.findIndex((s) => s.key === normalizedCurrent);
+  const normalizedTimeline = timeline.map((entry) => ({
+    ...entry,
+    status: normalizeStatus(entry.status),
+  }));
 
   return (
     <div style={{ padding: '20px 0' }}>
@@ -88,7 +95,7 @@ export default function StatusBar({ status, timeline = [] }) {
             Timeline
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {[...timeline].reverse().map((entry, i) => (
+            {[...normalizedTimeline].reverse().map((entry, i) => (
               <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                 <div style={{
                   width: 8, height: 8, borderRadius: '50%', marginTop: 5, flexShrink: 0,

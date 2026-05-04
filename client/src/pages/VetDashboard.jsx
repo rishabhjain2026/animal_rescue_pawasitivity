@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getVetDashboard, vetRespondCase, getVetAppointments } from '../api/cases.api';
-import { updateVolunteerStatus } from '../api/cases.api';
+import { getVetDashboard, vetRespondCase, getVetAppointments, updateCaseStatus } from '../api/cases.api';
 import { useToast } from '../context/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -14,12 +13,28 @@ export default function VetDashboard() {
   const [appointments, setAppointments] = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [responding,   setResponding]   = useState({});
+  const [completing,   setCompleting]   = useState({});
   const [activeTab,    setActiveTab]    = useState('pending');
 
   const fetchAll = () => {
-    Promise.all([getVetDashboard(), getVetAppointments()])
-      .then(([d, a]) => { setData(d.data); setAppointments(a.data); })
-      .catch(() => toast.error('Failed to load dashboard'))
+    Promise.allSettled([getVetDashboard(), getVetAppointments()])
+      .then(([dashboardRes, appointmentsRes]) => {
+        if (dashboardRes.status === 'fulfilled') {
+          setData(dashboardRes.value.data);
+        } else {
+          toast.error(
+            dashboardRes.reason?.response?.data?.message || 'Failed to load vet dashboard'
+          );
+          setData({ pending: [], active: [], completed: [], vet: {} });
+        }
+
+        if (appointmentsRes.status === 'fulfilled') {
+          setAppointments(appointmentsRes.value.data);
+        } else {
+          // Keep dashboard usable even if appointment API has issues.
+          setAppointments([]);
+        }
+      })
       .finally(() => setLoading(false));
   };
 
@@ -35,6 +50,22 @@ export default function VetDashboard() {
       toast.error(err.response?.data?.message || 'Failed to respond');
     } finally {
       setResponding((p) => ({ ...p, [caseId]: false }));
+    }
+  };
+
+  const markCompleted = async (caseId) => {
+    setCompleting((p) => ({ ...p, [caseId]: true }));
+    try {
+      await updateCaseStatus(caseId, {
+        status: 'completed',
+        note: 'Marked completed by vet from dashboard',
+      });
+      toast.success('Rescue marked as completed');
+      fetchAll();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to mark completed');
+    } finally {
+      setCompleting((p) => ({ ...p, [caseId]: false }));
     }
   };
 
@@ -143,9 +174,18 @@ export default function VetDashboard() {
                     <p style={{ fontSize:13, color:'var(--text-muted)' }}>{c.injuryType?.replace(/-/g,' ')} · Severity {c.severityScore}/5</p>
                     <p style={{ fontSize:12, color:'var(--text-hint)', marginTop:4 }}>{new Date(c.createdAt).toLocaleDateString('en-IN')}</p>
                   </div>
-                  <button className="btn btn-outline btn-sm" onClick={() => navigate(`/track/${c._id}`)}>
-                    View tracker
-                  </button>
+                  <div style={{ display:'flex', gap:10 }}>
+                    <button className="btn btn-outline btn-sm" onClick={() => navigate(`/track/${c._id}`)}>
+                      View tracker
+                    </button>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => markCompleted(c._id)}
+                      disabled={completing[c._id]}
+                    >
+                      {completing[c._id] ? <span className="spinner" /> : 'Mark completed'}
+                    </button>
+                  </div>
                 </div>
               ))
             }

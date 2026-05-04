@@ -13,6 +13,16 @@ const protect = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Support admin JWTs that carry role/email but no user id.
+    if (decoded.role === 'admin') {
+      req.user = {
+        role: 'admin',
+        email: decoded.email,
+      };
+      return next();
+    }
+
     req.user = await User.findById(decoded.id).select('-password');
     if (!req.user) return res.status(401).json({ message: 'User not found' });
     next();

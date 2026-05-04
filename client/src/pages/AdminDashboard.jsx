@@ -10,7 +10,7 @@ import {
   getAdminStats, getMapPins, getMonthlySummary,
   getPendingVets, getApprovedVets, approveVet, denyVet, revokeVet,
   getPendingVols, getApprovedVols, approveVolunteer, denyVolunteer, revokeVolunteer,
-  getStreetCases, getDomesticCases,
+  getStreetCases,
 } from '../api/admin.api';
 
 // Fix Leaflet icons
@@ -330,7 +330,6 @@ function CasesSection() {
   const [subTab,       setSubTab]       = useState('list');
   const [caseType,     setCaseType]     = useState('street');
   const [streetCases,  setStreetCases]  = useState([]);
-  const [domesticCases,setDomesticCases]= useState([]);
   const [monthly,      setMonthly]      = useState(null);
   const [loading,      setLoading]      = useState(false);
   const [dateFrom,     setDateFrom]     = useState('');
@@ -349,13 +348,12 @@ function CasesSection() {
     if(month) params.month=month;
     else { if(dateFrom) params.from=dateFrom; if(dateTo) params.to=dateTo; }
     if(statusFilter) params.status=statusFilter;
-    const fn = caseType==='street' ? getStreetCases : getDomesticCases;
-    fn(params).then(r=>caseType==='street'?setStreetCases(r.data):setDomesticCases(r.data))
+    getStreetCases(params).then((r) => setStreetCases(r.data))
       .catch(()=>toast.error('Failed to load cases')).finally(()=>setLoading(false));
-  },[caseType,month,dateFrom,dateTo,statusFilter]);
+  },[month,dateFrom,dateTo,statusFilter]);
 
   const STATUSES = ['reported','dispatched','volunteer-enroute','vet-dispatched','rescue-in-progress','rescued','completed','cancelled'];
-  const cases = caseType==='street' ? streetCases : domesticCases;
+  const cases = streetCases;
 
   return (
     <div>
@@ -375,9 +373,8 @@ function CasesSection() {
           <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end', padding:'14px 16px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, marginBottom:16 }}>
             <div className="form-group" style={{ minWidth:130 }}>
               <label className="form-label">Type</label>
-              <select className="form-input form-select" value={caseType} onChange={e=>setCaseType(e.target.value)} style={{ padding:'7px 10px', fontSize:13 }}>
+              <select className="form-input form-select" value={caseType} onChange={e=>setCaseType(e.target.value)} style={{ padding:'7px 10px', fontSize:13 }} disabled>
                 <option value="street">Street rescue</option>
-                <option value="domestic">Domestic / vet</option>
               </select>
             </div>
             <div className="form-group" style={{ minWidth:130 }}>
@@ -392,15 +389,13 @@ function CasesSection() {
               <label className="form-label">To</label>
               <input className="form-input" type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setMonth('');}} style={{ padding:'7px 10px', fontSize:13 }} />
             </div>
-            {caseType==='street' && (
-              <div className="form-group" style={{ minWidth:150 }}>
-                <label className="form-label">Status</label>
-                <select className="form-input form-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{ padding:'7px 10px', fontSize:13 }}>
-                  <option value="">All statuses</option>
-                  {STATUSES.map(s=><option key={s} value={s}>{s.replace(/-/g,' ')}</option>)}
-                </select>
-              </div>
-            )}
+            <div className="form-group" style={{ minWidth:150 }}>
+              <label className="form-label">Status</label>
+              <select className="form-input form-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{ padding:'7px 10px', fontSize:13 }}>
+                <option value="">All statuses</option>
+                {STATUSES.map(s=><option key={s} value={s}>{s.replace(/-/g,' ')}</option>)}
+              </select>
+            </div>
             <div style={{ display:'flex', gap:8, alignSelf:'flex-end' }}>
               <button className="btn btn-primary btn-sm" onClick={fetchCases}>Apply</button>
               <button className="btn btn-ghost btn-sm" onClick={()=>{setDateFrom('');setDateTo('');setMonth('');setStatusFilter('');}}>Clear</button>
@@ -416,16 +411,13 @@ function CasesSection() {
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13, minWidth:700 }}>
                 <thead>
                   <tr style={{ background:'var(--bg)', borderBottom:'2px solid var(--border)' }}>
-                    {(caseType==='street'
-                      ? ['Date & time','Case details','Reporter','Assigned to','Location','Stage']
-                      : ['Date','Pet','Owner','Vet','Complaint','Status']
-                    ).map(h=>(
+                    {['Date & time','Case details','Reporter','Assigned to','Location','Stage'].map(h=>(
                       <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {cases.map((c,i) => caseType==='street' ? (
+                  {cases.map((c,i) => (
                     <tr key={c._id} style={{ borderBottom:'1px solid var(--border)', background:i%2===0?'var(--surface)':'var(--bg)' }}>
                       <td style={{ padding:'10px 12px', whiteSpace:'nowrap' }}>
                         <p style={{ fontWeight:500 }}>{new Date(c.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</p>
@@ -458,15 +450,6 @@ function CasesSection() {
                           {c.location?.address?.split(',')[0]||'—'}
                         </p>
                       </td>
-                      <td style={{ padding:'10px 12px' }}><Pill status={c.status}/></td>
-                    </tr>
-                  ) : (
-                    <tr key={c._id} style={{ borderBottom:'1px solid var(--border)', background:i%2===0?'var(--surface)':'var(--bg)' }}>
-                      <td style={{ padding:'10px 12px', whiteSpace:'nowrap', fontWeight:500 }}>{new Date(c.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</td>
-                      <td style={{ padding:'10px 12px' }}><p style={{ fontWeight:500 }}>{c.pet?.name}</p><p style={{ fontSize:11, color:'var(--text-muted)' }}>{c.pet?.breed||c.pet?.species}</p></td>
-                      <td style={{ padding:'10px 12px' }}>{c.reporter?.name||'—'}</td>
-                      <td style={{ padding:'10px 12px' }}>{c.vet?.user?.name?`🩺 ${c.vet.user.name}`:'—'}</td>
-                      <td style={{ padding:'10px 12px', maxWidth:200 }}><p style={{ fontSize:12, color:'var(--text-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.complaint?.slice(0,55)}{c.complaint?.length>55?'…':''}</p></td>
                       <td style={{ padding:'10px 12px' }}><Pill status={c.status}/></td>
                     </tr>
                   ))}
@@ -615,7 +598,6 @@ export default function AdminDashboard() {
             <div className="page-enter">
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:12, marginBottom:24 }}>
                 <Stat val={stats.totals.street}            label="Street cases"         icon="🐕" />
-                <Stat val={stats.totals.domestic}          label="Domestic cases"       icon="🏠" />
                 <Stat val={stats.totals.resolved}          label="Total resolved"       icon="✅" color="var(--green)" />
                 <Stat val={stats.totals.active}            label="Active rescues"       icon="🚨" color="var(--coral)" />
                 <Stat val={stats.totals.vets}              label="Active vets"          icon="🩺" color="#185FA5" />

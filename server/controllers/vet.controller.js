@@ -92,23 +92,48 @@ const respondToStreetCase = async (req, res) => {
     const vet = await Vet.findOne({ user: req.user._id });
     if (!vet) return res.status(403).json({ message: 'Vet profile not found' });
 
-    // Update the dispatch chain entry for this vet
-    const entry = streetCase.dispatchChain.find(
-      (d) => d.responder?.toString() === vet._id.toString() && d.response === 'pending'
-    );
-    if (!entry) return res.status(400).json({ message: 'No pending dispatch found for you' });
-
-    entry.respondedAt = new Date();
-    entry.response = response;
-    if (rejectionReason) entry.rejectionReason = rejectionReason;
-
     if (response === 'accepted') {
+      if (streetCase.assignedVet && streetCase.assignedVet.toString() !== vet._id.toString()) {
+        return res.status(409).json({ message: 'This case is already accepted by another vet' });
+      }
+
+      let entry = streetCase.dispatchChain.find(
+        (d) => d.responderType === 'vet' && d.responder?.toString() === vet._id.toString()
+      );
+      if (!entry) {
+        streetCase.dispatchChain.push({
+          responderType: 'vet',
+          responder: vet._id,
+          sentAt: new Date(),
+          response: 'accepted',
+          respondedAt: new Date(),
+        });
+      } else {
+        entry.respondedAt = new Date();
+        entry.response = 'accepted';
+      }
+
       streetCase.assignedVet = vet._id;
       streetCase.status = 'vet-dispatched';
       streetCase.statusTimeline.push({ status: 'vet-dispatched', note: `Vet ${vet.clinicName} accepted`, updatedBy: req.user._id });
     } else {
-      // Trigger next dispatch from StreetCase controller via socket
-      req.io.emit(`escalate_${streetCase._id}`);
+      let entry = streetCase.dispatchChain.find(
+        (d) => d.responderType === 'vet' && d.responder?.toString() === vet._id.toString()
+      );
+      if (!entry) {
+        streetCase.dispatchChain.push({
+          responderType: 'vet',
+          responder: vet._id,
+          sentAt: new Date(),
+          response: 'rejected',
+          respondedAt: new Date(),
+          rejectionReason: rejectionReason || '',
+        });
+      } else {
+        entry.respondedAt = new Date();
+        entry.response = 'rejected';
+        if (rejectionReason) entry.rejectionReason = rejectionReason;
+      }
     }
 
     await streetCase.save();
@@ -130,7 +155,10 @@ const getVetDashboard = async (req, res) => {
     const vet = await Vet.findOne({ user: req.user._id });
     if (!vet) return res.status(404).json({ message: 'Vet profile not found' });
 
-    const pending  = await StreetCase.find({ 'dispatchChain': { $elemMatch: { responder: vet._id, response: 'pending' } } });
+    const pending  = await StreetCase.find({
+      status: { $nin: ['completed', 'cancelled'] },
+      assignedVet: null,
+    }).sort({ createdAt: -1 });
     const active   = await StreetCase.find({ assignedVet: vet._id, status: { $nin: ['completed','cancelled'] } });
     const completed = await StreetCase.find({ assignedVet: vet._id, status: 'completed' }).limit(20);
 

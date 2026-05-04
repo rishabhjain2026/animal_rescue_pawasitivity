@@ -14,6 +14,9 @@ const reportCase = async (req, res) => {
       lng, lat, address,
       humanSeverity, injuryType,
     } = req.body;
+    const normalizedReporterPhone = Array.isArray(reporterPhone)
+      ? reporterPhone[reporterPhone.length - 1]
+      : reporterPhone;
 
     // Process uploaded images + run AI severity scoring
     let images = [];
@@ -39,7 +42,7 @@ const reportCase = async (req, res) => {
 
     const streetCase = await StreetCase.create({
       reporter:      req.user._id,
-      reporterPhone,
+      reporterPhone: normalizedReporterPhone,
       description,
       landmark,
       location: {
@@ -80,8 +83,7 @@ const dispatchNextResponder = async (streetCase, io, skipVolunteers = false) => 
 
     if (!skipVolunteers) {
       // Try nearest available volunteer first
-      const volunteers = await Volunteer.find({
-        approvedByAdmin:    true,
+      let volunteers = await Volunteer.find({
         availabilityStatus: 'available',
         location: {
           $near: {
@@ -90,6 +92,13 @@ const dispatchNextResponder = async (streetCase, io, skipVolunteers = false) => 
           },
         },
       }).limit(5).populate('user', 'name phone email');
+
+      // Fallback: if no nearby volunteers, use any available volunteer
+      if (!volunteers.length) {
+        volunteers = await Volunteer.find({ availabilityStatus: 'available' })
+          .limit(5)
+          .populate('user', 'name phone email');
+      }
 
       // Filter out already-asked volunteers
       const askedIds = streetCase.dispatchChain
@@ -132,8 +141,7 @@ const dispatchNextResponder = async (streetCase, io, skipVolunteers = false) => 
     }
 
     // No volunteer available — dispatch to nearest vet
-    const vets = await Vet.find({
-      approvedByAdmin: true,
+    let vets = await Vet.find({
       isAvailableForStreetRescue: true,
       location: {
         $near: {
@@ -142,6 +150,13 @@ const dispatchNextResponder = async (streetCase, io, skipVolunteers = false) => 
         },
       },
     }).limit(5).populate('user', 'name phone email');
+
+    // Fallback: if no nearby vets, use any available vet
+    if (!vets.length) {
+      vets = await Vet.find({ isAvailableForStreetRescue: true })
+        .limit(5)
+        .populate('user', 'name phone email');
+    }
 
     const askedVetIds = streetCase.dispatchChain
       .filter((d) => d.responderType === 'vet')
